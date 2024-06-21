@@ -184,10 +184,10 @@ $total_pages = ceil($total_products / $records_per_page);
                     <div class="tab-pane fade show active" id="nav-home" role="tabpanel" aria-labelledby="nav-home-tab">
                         <h1>Products</h1>
                         <div class="row mb-4">
-                            <div class="col-md-3">
+                            <div class="col-md-6">
                                 <form class="d-flex" method="GET" action="index_user.php">
                                     <input class="form-control me-2" type="search" name="query" placeholder="Search" value="<?php echo $search_query; ?>">
-                                    <button type="submit" class="btn btn-primary bi bi-search"></button>
+                                    <button type="submit" class="btn btn-danger">Search</button>
                                 </form>
                                 <form method="GET" action="index_user.php">
                                     <input type="hidden" name="query" value="<?php echo $search_query; ?>">
@@ -198,7 +198,7 @@ $total_pages = ceil($total_products / $records_per_page);
                                                 <option value="<?php echo $category['id']; ?>" <?php if ($category_filter == $category['id']) echo 'selected'; ?>><?php echo $category['name']; ?></option>
                                             <?php endforeach; ?>
                                         </select>
-                                        <button type="submit" class="btn btn-primary">Filter</button>
+                                        <button type="submit" class="btn btn-danger">Filter</button>
                                     </div>
                                 </form>
                             </div>

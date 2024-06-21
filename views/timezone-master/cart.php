@@ -216,8 +216,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) == 'checkCod
               <h2>Tổng đơn hàng: <span style="color: red;"><?= number_format($carts->getTotal() - ($discount * $carts->getTotal()) / 100), '.' ?> VND</span></h2>
             </div>
             <div class="checkout_btn_inner float-right">
-              <a class="btn_1" href="shop.php">Continue Shopping</a>
-              <a class="btn_1 checkout_btn_1" href="../../views/timezone-master/checkout.php">Proceed to checkout</a>
+              <a class="btn_1" href="../../views/timezone-master/index_user.php">Tiếp tục mua sắm</a>
+              <a class="btn_1 checkout_btn_1" href="../../views/timezone-master/checkout.php">Thanh Toán Ngay</a>
             </div>
           </div>
         </div>

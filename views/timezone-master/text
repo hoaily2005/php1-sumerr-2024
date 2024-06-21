@@ -1,0 +1,197 @@
+<?php
+session_start();
+$errors = [];
+$discount = isset($_SESSION['discount']) ? $_SESSION['discount'] : 0;
+$user_id = 1; // Example user ID for demonstration purposes
+
+if ($_SERVER['REQUEST_METHOD'] == 'POST') {
+    if (isset($_POST['action']) && $_POST['action'] == 'checkout') {
+        if (isset($_POST['code'])) {
+            if (!empty($_POST['code'])) {
+                $isCheck = checkCode($_POST['code']);
+                if (!empty($isCheck)) {
+                    $_SESSION['discount'] = $isCheck['discount'];
+                    $_SESSION['coupon_code'] = $isCheck['code'];
+                    $discount = $isCheck['discount'];
+                }
+            }
+        } else {
+            // Validate inputs
+            $middleName = isset($_POST['middleName']) ? trim($_POST['middleName']) : '';
+            $name = isset($_POST['name']) ? trim($_POST['name']) : '';
+            $email = isset($_POST['email']) ? trim($_POST['email']) : '';
+            $phone = isset($_POST['phone']) ? trim($_POST['phone']) : '';
+            $address = isset($_POST['address']) ? trim($_POST['address']) : '';
+            $paymentMethod = isset($_POST['payment']) ? $_POST['payment'] : '';
+
+            if (empty($middleName)) {
+                $errors['middleName'] = 'Middle name is required.';
+            }
+
+            if (empty($name)) {
+                $errors['name'] = 'Name is required.';
+            }
+
+            if (empty($email) || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                $errors['email'] = 'Valid email is required.';
+            }
+
+            if (empty($phone)) {
+                $errors['phone'] = 'Phone number is required.';
+            }
+
+            if (empty($address)) {
+                $errors['address'] = 'Address is required.';
+            }
+
+            if (empty($paymentMethod)) {
+                $errors['payment'] = 'Please select a payment method.';
+            }
+
+            // If no errors, process the order
+            if (empty($errors)) {
+                $customer_name = $middleName . ' ' . $name;
+                $total_amount = $carts->getTotal() - ($discount * $carts->getTotal() / 100);
+
+                // Save order information to database
+                $order_id = $dbHelper->insert("orders", array(
+                    'user_id' => $user_id,
+                    'customer_name' => $customer_name,
+                    'customer_email' => $email,
+                    'customer_phone' => $phone,
+                    'customer_address' => $address,
+                    'payment_method' => $paymentMethod,
+                    'total_amount' => $total_amount,
+                    'discount' => $discount,
+                    'coupon_code' => isset($_SESSION['coupon_code']) ? $_SESSION['coupon_code'] : null
+                ));
+
+                // Save order details to database
+                foreach ($carts->getCart() as $item) {
+                    $subTotal = $item['quantity'] * $item['price'];
+                    $dbHelper->insert("order_details", array(
+                        'order_id' => $order_id,
+                        'user_id' => $user_id,
+                        'product_name' => $item['name'],
+                        'quantity' => $item['quantity'],
+                        'price' => $item['price'],
+                        'total' => $subTotal
+                    ));
+                }
+
+                // Handle VNPAY payment
+                if ($paymentMethod == 'vnpay') {
+                    require_once '../timezone-master/payment_service.php';
+                    PaymentService::createUrlPayment($order_id, $total_amount);
+                    exit();
+                }
+
+                // Send order confirmation email
+                if (sendOrderConfirmationEmail($email, $customer_name, $order_id, $total_amount, $paymentMethod, $discount, $address)) {
+                    // Redirect to order details page
+                    header('Location: ../timezone-master/order_details.php');
+                    exit();
+                } else {
+                    $error_message = "There was an error sending the email.";
+                }
+            }
+        }
+    }
+}
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
+    <title>Checkout Form</title>
+    <script>
+        document.addEventListener("DOMContentLoaded", function() {
+            const form = document.getElementById('checkout');
+            form.addEventListener('submit', function(event) {
+                let paymentSelected = false;
+                const paymentMethods = document.getElementsByName('payment');
+                for (let i = 0; i < paymentMethods.length; i++) {
+                    if (paymentMethods[i].checked) {
+                        paymentSelected = true;
+                        break;
+                    }
+                }
+                if (!paymentSelected) {
+                    event.preventDefault();
+                    alert("Please select a payment method.");
+                }
+            }, false);
+        });
+    </script>
+</head>
+<body>
+<section class="checkout_area section_padding">
+    <div class="container">
+        <div class="py-5 text-center">
+            <h2>Checkout form</h2>
+        </div>
+        <div class="row">
+            <div class="col-md-8 order-md-1">
+                <h4 class="mb-3">Customer Information</h4>
+                <form id="checkout" class="needs-validation" novalidate action="" method="post">
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="middleName">Middle name</label>
+                            <input type="text" class="form-control" id="middleName" name="middleName" value="<?php echo isset($_POST['middleName']) ? htmlspecialchars($_POST['middleName']) : '' ?>" placeholder="Họ + Tên lót">
+                            <?php if (isset($errors['middleName'])) : ?>
+                                <p class="red"><?php echo $errors['middleName']; ?></p>
+                            <?php endif; ?>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="name">Name</label>
+                            <input type="text" class="form-control" id="name" name="name" value="<?php echo isset($_POST['name']) ? htmlspecialchars($_POST['name']) : '' ?>" placeholder="Tên">
+                            <?php if (isset($errors['name'])) : ?>
+                                <p class="red"><?php echo $errors['name']; ?></p>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="email">Email</label>
+                        <input type="email" class="form-control" id="email" name="email" placeholder="you@example.com" value="<?php echo isset($_POST['email']) ? htmlspecialchars($_POST['email']) : '' ?>" required>
+                        <?php if (isset($errors['email'])) : ?>
+                            <p class="red"><?php echo $errors['email']; ?></p>
+                        <?php endif; ?>
+                    </div>
+                    <div class="mb-3">
+                        <label for="phone">Phone</label>
+                        <input type="tel" class="form-control" id="phone" name="phone" placeholder="Phone number" value="<?php echo isset($_POST['phone']) ? htmlspecialchars($_POST['phone']) : '' ?>" required>
+                        <?php if (isset($errors['phone'])) : ?>
+                            <p class="red"><?php echo $errors['phone']; ?></p>
+                        <?php endif; ?>
+                    </div>
+                    <div class="mb-3">
+                        <label for="address">Address</label>
+                        <input type="text" class="form-control" id="address" name="address" placeholder="1234 Main St" value="<?php echo isset($_POST['address']) ? htmlspecialchars($_POST['address']) : '' ?>" required>
+                        <?php if (isset($errors['address'])) : ?>
+                            <p class="red"><?php echo $errors['address']; ?></p>
+                        <?php endif; ?>
+                    </div>
+                    <hr class="mb-4">
+                    <div class="custom-control custom-checkbox">
+                        <input type="checkbox" class="custom-control-input" id="same-address">
+                        <label class="custom-control-label" for="same-address">Shipping address is the same as my billing address</label>
+                    </div>
+                    <div class="custom-control custom-checkbox">
+                        <input type="checkbox" class="custom-control-input" id="save-info">
+                        <label class="custom-control-label" for="save-info">Save this information for next time</label>
+                    </div>
+                    <hr class="mb-4">
+                    <h4 class="mb-3">Payment</h4>
+                    <div class="checkout__input__checkbox">
+                        <label for="payment-cod">
+                            COD
+                            <input name="payment" value="cod" type="radio" id="payment-cod">
+                            <span class="checkmark"></span>
+                        </label>
+                    </div>
+                    <div class="checkout__input__checkbox">
+                        <label for="payment-vnpay">
+                            VNPAY
+                            <input name="payment" value="

@@ -1,20 +1,25 @@
 <?php
-// session_start();
+require_once '../notification.php';
 include_once('../../controllers/DBUtil.php');
 include_once('../../controllers/cart/cart.php');
 ini_set('display_errors', '1');
-//kiểm tra đăng nhập
-if (!isset($_SESSION['username']) || !isset($_SESSION['username'])) {
-    header("Location: ../signin.php"); 
+
+// Kiểm tra đăng nhập
+if (!isset($_SESSION['username'])) {
+    header("Location: ../signin.php");
     exit();
 }
-//truy vấn thông tin người dùng đã đăng kí
+
+// Khởi động session nếu chưa tồn tại
 if (session_status() == PHP_SESSION_NONE) {
     session_start();
 }
 
+// Lấy thông tin người dùng nếu đã đăng nhập
+$email = '';
+$phone = '';
+$address = '';
 if (isset($_SESSION['username'])) {
-    include_once('../../controllers/DBUtil.php');
     $dbHelper = new DBUntil();
     $username = $_SESSION['username'];
     $user_info = $dbHelper->select("SELECT email, phone, id, address FROM users WHERE username=:username", array('username' => $username));
@@ -24,26 +29,22 @@ if (isset($_SESSION['username'])) {
         $email = $user_info[0]['email'];
         $phone = $user_info[0]['phone'];
         $address = $user_info[0]['address'];
-    } else {
-        $email = '';
-        $phone = '';
-        $address = '';
     }
-} else {
-    $email = '';
-    $phone = '';
-    $address = '';
 }
-//Kết thúc truy vấn
 
+// Khởi tạo đối tượng DBUntil và lấy danh sách sản phẩm
 $dbHelper = new DBUntil();
 $categories = $dbHelper->select("SELECT * FROM products");
 $errors = [];
 $carts = new Cart();
 $discount = 0;
+
+// Lấy giảm giá nếu có
 if (isset($_SESSION['discount'])) {
     $discount = $_SESSION['discount'];
 }
+
+// Hàm kiểm tra mã giảm giá
 function checkCode($code)
 {
     global $dbHelper;
@@ -59,7 +60,7 @@ function checkCode($code)
 }
 
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
-    if (isset($_POST['action'])) {
+    if (isset($_POST['action']) && $_POST['action'] == 'checkout') {
         if ($_POST['action'] == 'checkCode') {
             if (!empty($_POST['code'])) {
                 $isCheck = checkCode($_POST['code']);
@@ -70,13 +71,18 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 }
             }
         } elseif ($_POST['action'] == 'checkout') {
+            // Xử lý lưu thông tin đơn hàng vào database ở đây...
             $customer_name = $_POST['middleName'] . ' ' . $_POST['name'];
             $customer_email = $_POST['email'];
             $customer_phone = $_POST['phone'];
             $customer_address = $_POST['address'];
-            $payment_method = $_POST['paymentMethod'];
+            // Assign payment method, defaulting to 'COD' if not provided or not 'VNPAY'
+            $paymentMethod = isset($_POST['payment']) ? $_POST['payment'] : '';
             $discount = $_SESSION['discount'];
             $total_amount = $carts->getTotal() - ($discount * $carts->getTotal() / 100);
+
+            // Lưu thông tin đơn hàng vào database
+            $order_status = ($paymentMethod == 'vnpay') ? 'Success' : 'Pending';
 
             $order_id = $dbHelper->insert("orders", array(
                 'user_id' => $user_id,
@@ -84,13 +90,14 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 'customer_email' => $customer_email,
                 'customer_phone' => $customer_phone,
                 'customer_address' => $customer_address,
-                'payment_method' => $payment_method,
+                'payment_method' => $paymentMethod,
                 'total_amount' => $total_amount,
+                'status' => $order_status,
                 'discount' => $discount,
                 'coupon_code' => isset($_SESSION['coupon_code']) ? $_SESSION['coupon_code'] : null
-
             ));
 
+            // Lưu chi tiết đơn hàng vào database
             foreach ($carts->getCart() as $item) {
                 $subTotal = $item['quantity'] * $item['price'];
                 $dbHelper->insert("order_details", array(
@@ -107,14 +114,32 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     'customer_address' => $customer_address,
                 ));
             }
-
-            header("Location: ../timezone-master/order_details.php");
-            exit();
+            if ($paymentMethod == 'vnpay') {
+                require_once '../timezone-master/payment_service.php';
+                PaymentService::createUrlPayment($order_id, $total_amount); // gọi hàm thanh toán VNPAY
+                exit();
+            }
+            // if (sendOrderConfirmationEmail($customer_email, $customer_name, $order_id, $total_amount, $payment_method, $discount, $customer_address)) {
+            //     echo '<script>window.location.href="../timezone-master/order_details.php";</script>';
+            //     exit();
+            // } else {
+            //     $error_message = "Không thể gửi email.";
+            // }
+            if (sendOrderConfirmationEmail($customer_email, $customer_name, $order_id, $total_amount, $discount, $customer_address)) {
+                echo '<script>window.location.href="../timezone-master/order_details.php";</script>';
+                exit();
+            } elseif ($paymentMethod == 'vnpay' && sendOrderConfirmationVNPAY($customer_email, $customer_name, $order_id, $total_amount, $payment_method, $discount, $customer_address)) {
+                echo '<script>window.location.href="../timezone-master/order_details.php";</script>';
+                exit();
+            } else {
+                $error_message = "Không thể gửi email.";
+            }
+            
         }
     }
 }
-
 ?>
+
 <!doctype html>
 <html class="no-js" lang="zxx">
 
@@ -238,6 +263,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                         </h4>
                         <ul class="list-group mb-3">
                             <?php
+                            // Vòng lặp hiển thị thông tin giỏ hàng 
                             foreach ($carts->getCart() as $item) {
                                 $subTotal = $item['quantity'] * $item['price'];
                                 echo "<li class='list-group-item d-flex justify-content-between lh-condensed'>";
@@ -262,7 +288,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     </div>
                     <div class="col-md-8 order-md-1">
                         <h4 class="mb-3">Customer Information</h4>
-                        <form class="needs-validation" novalidate action="" method="post">
+                        <form id="checkout" class="needs-validation" novalidate action="" method="post">
                             <div class="row">
                                 <div class="col-md-6 mb-3">
                                     <label for="middleName">Middle name</label>
@@ -296,19 +322,33 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                             </div>
                             <hr class="mb-4">
                             <h4 class="mb-3">Payment</h4>
-                            <div class="d-block my-3">
-                                <div class="custom-control custom-radio">
-                                    <input id="credit" name="paymentMethod" type="radio" class="custom-control-input" value="COD" checked required>
-                                    <label class="custom-control-label" for="credit">COD</label>
-                                </div>
-                                <div class="custom-control custom-radio">
-                                    <input id="paypal" name="paymentMethod" type="radio" class="custom-control-input" value="VNPAY" required>
-                                    <label class="custom-control-label" for="paypal">VNPAY</label>
-                                </div>
+                            <div class="checkout__input__checkbox">
+                                <label for="payment-cod">
+                                    COD
+                                    <input name="payment" value="cod" type="radio" id="payment-cod">
+                                    <span class="checkmark"></span>
+                                </label>
                             </div>
-                            <hr class="mb-4">
-                            <button class="btn btn-primary btn-lg btn-block" name="action" value="checkout" type="submit">Continue to checkout</button>
+                            <div class="checkout__input__checkbox">
+                                <label for="payment-vnpay">
+                                    VNPAY
+                                    <input name="payment" value="vnpay" type="radio" id="payment-vnpay">
+                                    <span class="checkmark"></span>
+                                </label>
+                            </div>
+                            <button class="btn btn-danger btn-lg btn-block" name="action" value="checkout" type="submit">Thanh Toán Ngay</button>
                         </form>
+                        <hr class="mb-4">
+                        <?php
+                        // Hiển thị thông báo thành công hoặc lỗi sau khi submit form
+                        if (isset($success_message)) {
+                            echo "<div class='alert alert-success mt-4' role='alert'>$success_message</div>";
+                        }
+                        if (isset($error_message)) {
+                            echo "<div class='alert alert-danger mt-4' role='alert'>$error_message</div>";
+                        }
+                        ?>
+
                     </div>
                 </div>
                 <footer class="my-5 pt-5 text-muted text-center text-small">

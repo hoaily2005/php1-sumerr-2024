@@ -15,6 +15,10 @@ class DBUntil
         $this->connection = $db->getConnection();
     }
 
+    public function getConnection()
+    {
+        return $this->connection;
+    }
     public function select($sql, $params = [])
     {
         $stmt = $this->connection->prepare($sql);
@@ -75,6 +79,7 @@ class DBUntil
         $stmt->execute($params);
         return $stmt->rowCount();
     }
+    
     
 }
 ?>

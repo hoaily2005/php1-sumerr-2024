@@ -165,7 +165,7 @@ $product = $product[0]; // Get the first (and only) product
                                 <button type="submit" class="btn btn-primary"><i class='bi bi-cart'></i> Thêm vào giỏ hàng</button>
                             </div>
                         </form>
-                        <a href="../views/timezone-master/index_user.php" class="btn btn-secondary mt-3">Back to Products</a>
+                        <a href="../timezone-master/index_user.php" class="btn btn-secondary mt-3">Back to Products</a>
                     </div>
                 </div>
             </div>
